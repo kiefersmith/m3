@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Uber Technologies, Inc.
+// Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -18,28 +18,45 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package searcher
+package index
 
 import (
-	"github.com/m3db/m3/src/m3ninx/index"
-	"github.com/m3db/m3/src/m3ninx/postings"
-	"github.com/m3db/m3/src/m3ninx/search"
+	"bytes"
+	re "regexp"
+
+	vregex "github.com/couchbase/vellum/regexp"
 )
 
-type regexpSearcher struct {
-	field    []byte
-	compiled index.CompiledRegex
-}
+// CompileRegex compiles the provided regexp.
+func CompileRegex(r []byte) (CompiledRegex, error) {
+	var simpleRESBytes, fstREBytes []byte
 
-// NewRegexpSearcher returns a new searcher for finding documents which match the given regular
-// expression.
-func NewRegexpSearcher(field []byte, compiled index.CompiledRegex) search.Searcher {
-	return &regexpSearcher{
-		field:    field,
-		compiled: compiled,
+	// NB(prateek): the fst segment (Vellum) treats all Regexps as anchored, so
+	// we make sure the mem segment does the same to ensure the behaviour is consistent.
+	if bytes.HasPrefix(r, []byte("^")) {
+		simpleRESBytes = r
+		fstREBytes = fstREBytes[1:]
+	} else {
+		simpleRESBytes = append([]byte("^"), r...)
+		fstREBytes = r
 	}
-}
 
-func (s *regexpSearcher) Search(r index.Reader) (postings.List, error) {
-	return r.MatchRegexp(s.field, s.compiled)
+	var (
+		simpleREString = string(simpleRESBytes)
+		fstREString    = string(fstREBytes)
+		compiledRegex  = CompiledRegex{}
+	)
+	simpleRE, err := re.Compile(simpleREString)
+	if err != nil {
+		return compiledRegex, err
+	}
+	compiledRegex.Simple = simpleRE
+
+	fstRE, err := vregex.New(fstREString)
+	if err != nil {
+		return compiledRegex, err
+	}
+	compiledRegex.FST = fstRE
+
+	return compiledRegex, nil
 }

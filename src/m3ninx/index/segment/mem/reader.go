@@ -31,6 +31,7 @@ import (
 
 var (
 	errSegmentReaderClosed = errors.New("segment reader is closed")
+	errReaderNilRegex      = errors.New("nil regex received")
 )
 
 type reader struct {
@@ -71,7 +72,7 @@ func (r *reader) MatchTerm(field, term []byte) (postings.List, error) {
 	return pl, err
 }
 
-func (r *reader) MatchRegexp(field, regexp []byte, compiled index.CompiledRegex) (postings.List, error) {
+func (r *reader) MatchRegexp(field []byte, compiled index.CompiledRegex) (postings.List, error) {
 	r.RLock()
 	defer r.RUnlock()
 	if r.closed {
@@ -83,7 +84,11 @@ func (r *reader) MatchRegexp(field, regexp []byte, compiled index.CompiledRegex)
 	// with a postings list through a call to Docs will IDs greater than the maximum be
 	// filtered out.
 	compileRE := compiled.Simple
-	pl, err := r.segment.matchRegexp(field, regexp, compileRE)
+	if compileRE == nil {
+		return nil, errReaderNilRegex
+	}
+
+	pl, err := r.segment.matchRegexp(field, compileRE)
 	return pl, err
 }
 

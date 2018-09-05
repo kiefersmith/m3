@@ -39,11 +39,11 @@ import (
 	xerrors "github.com/m3db/m3x/errors"
 
 	"github.com/couchbase/vellum"
-	vregex "github.com/couchbase/vellum/regexp"
 )
 
 var (
 	errReaderClosed            = errors.New("segment is closed")
+	errReaderNilRegexp         = errors.New("nil regexp provided")
 	errUnsupportedMajorVersion = errors.New("unsupported major version")
 	errDocumentsDataUnset      = errors.New("documents data bytes are not set")
 	errDocumentsIdxUnset       = errors.New("documents index bytes are not set")
@@ -297,24 +297,16 @@ func (r *fsSegment) MatchTerm(field []byte, term []byte) (postings.List, error) 
 	return pl, nil
 }
 
-func (r *fsSegment) MatchRegexp(field []byte, regexp []byte, compiled index.CompiledRegex) (postings.List, error) {
+func (r *fsSegment) MatchRegexp(field []byte, compiled index.CompiledRegex) (postings.List, error) {
 	r.RLock()
 	defer r.RUnlock()
 	if r.closed {
 		return nil, errReaderClosed
 	}
 
-	var (
-		re  *vregex.Regexp
-		err error
-	)
-	if compiled.FST != nil {
-		re = compiled.FST
-	} else {
-		re, err = vregex.New(string(regexp))
-		if err != nil {
-			return nil, err
-		}
+	re := compiled.FST
+	if re == nil {
+		return nil, errReaderNilRegexp
 	}
 
 	termsFST, exists, err := r.retrieveTermsFSTWithRLock(field)
@@ -517,13 +509,13 @@ func (sr *fsSegmentReader) MatchTerm(field []byte, term []byte) (postings.List, 
 	return sr.fsSegment.MatchTerm(field, term)
 }
 
-func (sr *fsSegmentReader) MatchRegexp(field []byte, regexp []byte, compiled index.CompiledRegex) (postings.List, error) {
+func (sr *fsSegmentReader) MatchRegexp(field []byte, compiled index.CompiledRegex) (postings.List, error) {
 	sr.RLock()
 	defer sr.RUnlock()
 	if sr.closed {
 		return nil, errReaderClosed
 	}
-	return sr.fsSegment.MatchRegexp(field, regexp, compiled)
+	return sr.fsSegment.MatchRegexp(field, compiled)
 }
 
 func (sr *fsSegmentReader) MatchAll() (postings.MutableList, error) {
